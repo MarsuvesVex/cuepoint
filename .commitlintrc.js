@@ -1,7 +1,71 @@
+const pkg = require('./package.json')
+/**/
+/* // Check if the user has configured the package to use conventional commits. */
+const isConventional = pkg.config ? pkg.config['cz-emoji']?.conventional : false
+
+// Regex for default and conventional commits.
+const RE_DEFAULT_COMMIT = /^(?::.*:|(?:\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]))\s(?<emoji>\((?<scope>.*)\)\s)?.*$/gm
+const RE_CONVENTIONAL_COMMIT = /^^(?<type>\w+)(?:\((?<scope>\w+)\))?\s(?<emoji>:.*:|(?:\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]))\s.*$/gm
+
+/* module.exports = { */
+/*   rules: { */
+/*     'cz-emoji': [2, 'always'] */
+/*   }, */
+
+/*   plugins: [ */
+/*     { */
+/*       rules: { */
+/*         'cz-emoji': ({ raw }) => { */
+/*           const isValid = isConventional */
+/*             ? RE_CONVENTIONAL_COMMIT.test(raw) */
+/*             : RE_DEFAULT_COMMIT.test(raw) */
+/**/
+/*           const message = isConventional */
+/*             ? `Your commit message should follow conventional commit format.` */
+/*             : `Your commit message should be: <emoji> (<scope>)?: <subject>` */
+/**/
+/*           return [isValid, message] */
+/*         } */
+/*       } */
+/*     } */
+/*   ] */
+/* } */
+// .commitlintrc.js
+/* const fs = require('fs'); */
+/* const path = require('path'); */
+/* const packages = fs.readdirSync(path.resolve(__dirname, 'packages')); */
+/**/
+/* module.exports = { */
+/*   rules: { */
+/*     'scope-enum': [2, 'always', packages] */
+/*   }, */
+/*   prompt: { */
+/*     scopes: [...packages] */
+/*   } */
+/* }; */
+/**/
+
 const { defineConfig } = require('cz-git')
 
 module.exports = defineConfig({
-	  extends: ["@commitlint/config-conventional"],
+	extends: ['@commitlint/config-conventional'],
+  plugins: [
+    {
+      rules: {
+        'cz-emoji': ({ raw }) => {
+          const isValid = isConventional
+            ? RE_CONVENTIONAL_COMMIT.test(raw)
+            : RE_DEFAULT_COMMIT.test(raw)
+
+          const message = isConventional
+            ? `Your commit message should follow conventional commit format.`
+            : `Your commit message should be: <emoji> (<scope>)?: <subject>`
+
+          return [isValid, message]
+        }
+      }
+    }
+  ],
     prompt: {
         alias: { fd: 'docs: fix typos' },
         messages: {
@@ -36,7 +100,20 @@ module.exports = defineConfig({
         useAI: false,
         aiNumber: 1,
         themeColorCode: '',
-        scopes: [],
+      scopes: [
+        "api",
+        "bot",
+        "worker",
+        "cli",
+        "config",
+        "database",
+        "events",
+        "ffmpeg",
+        "stream",
+        "infra",
+        "docs",
+        "repo"
+      ],
         allowCustomScopes: true,
         allowEmptyScopes: true,
         customScopesAlign: 'bottom',
