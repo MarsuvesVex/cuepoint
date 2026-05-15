@@ -29,32 +29,55 @@ type MarkerClient interface {
 	CreateMarker(ctx context.Context, input stream.CreateMarkerInput) (CreateMarkerResult, error)
 }
 
+type HealthcheckClient interface {
+	Healthcheck(ctx context.Context) (HealthcheckResult, error)
+}
+
 type CreateMarkerResult struct {
 	MarkerID string
 	JobID    string
 	Status   string
 }
 
-type Handler struct {
-	client MarkerClient
+type Command interface {
+	Name() string
+	Match(input ParsedInput) bool
+	Run(ctx context.Context, msg Message, input ParsedInput) (string, error)
 }
 
-func NewHandler(client MarkerClient) *Handler {
-	return &Handler{client: client}
+type ParsedInput struct {
+	Name string
+	Args []string
+}
+
+type Handler struct {
+	commands []Command
+}
+
+func NewHandler(commands ...Command) *Handler {
+	return &Handler{commands: commands}
+}
+
+func NewDefaultHandler(markerClient MarkerClient, healthClient HealthcheckClient) *Handler {
+	return NewHandler(
+		NewHealthcheckCommand(healthClient),
+		NewMarkerCommand(markerClient),
+	)
 }
 
 func (h *Handler) Handle(ctx context.Context, msg Message) (string, error) {
-	command, ok := parseMarkerCommand(msg.Text)
+	input, ok := ParseCommand(msg.Text)
 	if !ok {
 		return "", nil
 	}
 
-	result, err := h.client.CreateMarker(ctx, command)
-	if err != nil {
-		return "", err
+	for _, command := range h.commands {
+		if command.Match(input) {
+			return command.Run(ctx, msg, input)
+		}
 	}
 
-	return fmt.Sprintf("marker=%s job=%s status=%s", result.MarkerID, result.JobID, result.Status), nil
+	return fmt.Sprintf("unknown command: %s", input.Name), nil
 }
 
 func Run(ctx context.Context, adapter Adapter, responder Responder, handler *Handler) error {
@@ -63,7 +86,11 @@ func Run(ctx context.Context, adapter Adapter, responder Responder, handler *Han
 		select {
 		case <-ctx.Done():
 			return nil
-		case err := <-errs:
+		case err, ok := <-errs:
+			if !ok {
+				errs = nil
+				continue
+			}
 			if err != nil {
 				return err
 			}
@@ -88,16 +115,86 @@ func Run(ctx context.Context, adapter Adapter, responder Responder, handler *Han
 	}
 }
 
-func parseMarkerCommand(text string) (stream.CreateMarkerInput, bool) {
+func ParseCommand(text string) (ParsedInput, bool) {
 	fields := strings.Fields(text)
-	if len(fields) != 4 || fields[0] != "!marker" {
-		return stream.CreateMarkerInput{}, false
+	if len(fields) == 0 || !strings.HasPrefix(fields[0], "!") {
+		return ParsedInput{}, false
+	}
+
+	return ParsedInput{
+		Name: strings.TrimPrefix(fields[0], "!"),
+		Args: fields[1:],
+	}, true
+}
+
+type MarkerCommand struct {
+	client MarkerClient
+}
+
+func NewMarkerCommand(client MarkerClient) *MarkerCommand {
+	return &MarkerCommand{client: client}
+}
+
+func (c *MarkerCommand) Name() string {
+	return "marker"
+}
+
+func (c *MarkerCommand) Match(input ParsedInput) bool {
+	return input.Name == c.Name()
+}
+
+func (c *MarkerCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
+	command, err := parseMarkerArgs(input.Args)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := c.client.CreateMarker(ctx, command)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("marker=%s job=%s status=%s", result.MarkerID, result.JobID, result.Status), nil
+}
+
+type HealthcheckCommand struct {
+	client HealthcheckClient
+}
+
+func NewHealthcheckCommand(client HealthcheckClient) *HealthcheckCommand {
+	return &HealthcheckCommand{client: client}
+}
+
+func (c *HealthcheckCommand) Name() string {
+	return "health"
+}
+
+func (c *HealthcheckCommand) Match(input ParsedInput) bool {
+	return input.Name == c.Name()
+}
+
+func (c *HealthcheckCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
+	if len(input.Args) != 0 {
+		return "", errors.New("usage: !health")
+	}
+
+	result, err := c.client.Healthcheck(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("health=%s", result.Status), nil
+}
+
+func parseMarkerArgs(args []string) (stream.CreateMarkerInput, error) {
+	if len(args) != 3 {
+		return stream.CreateMarkerInput{}, errors.New("usage: !marker <stream> <label> <timestamp>")
 	}
 	return stream.CreateMarkerInput{
-		StreamID:  fields[1],
-		Label:     fields[2],
-		Timestamp: fields[3],
-	}, true
+		StreamID:  args[0],
+		Label:     args[1],
+		Timestamp: args[2],
+	}, nil
 }
 
 type StdinAdapter struct {

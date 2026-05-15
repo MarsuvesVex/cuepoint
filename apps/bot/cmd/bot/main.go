@@ -21,11 +21,11 @@ func main() {
 	}
 
 	client := bot.NewHTTPMarkerClient(cfg.Bot.APIBaseURL, nil)
-	handler := bot.NewHandler(client)
+	handler := bot.NewDefaultHandler(client, client)
 	adapter := bot.NewStdinAdapter(os.Stdin)
 	responder := bot.NewWriterResponder(os.Stdout)
 
-	log.Printf("bot ready, enter commands like !marker <stream> <label> <timestamp>")
+	log.Printf("bot ready, enter commands like !health or !marker <stream> <label> <timestamp>")
 	if err := bot.Run(ctx, adapter, responder, handler); err != nil {
 		log.Fatalf("run bot: %v", err)
 	}

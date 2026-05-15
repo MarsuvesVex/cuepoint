@@ -15,6 +15,10 @@ type HTTPMarkerClient struct {
 	client  *http.Client
 }
 
+type HealthcheckResult struct {
+	Status string `json:"status"`
+}
+
 func NewHTTPMarkerClient(baseURL string, client *http.Client) *HTTPMarkerClient {
 	if client == nil {
 		client = http.DefaultClient
@@ -50,6 +54,30 @@ func (c *HTTPMarkerClient) CreateMarker(ctx context.Context, input stream.Create
 	var result CreateMarkerResult
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return CreateMarkerResult{}, fmt.Errorf("decode response: %w", err)
+	}
+
+	return result, nil
+}
+
+func (c *HTTPMarkerClient) Healthcheck(ctx context.Context) (HealthcheckResult, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
+	if err != nil {
+		return HealthcheckResult{}, fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return HealthcheckResult{}, fmt.Errorf("healthcheck request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return HealthcheckResult{}, fmt.Errorf("healthcheck failed: %s", resp.Status)
+	}
+
+	var result HealthcheckResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return HealthcheckResult{}, fmt.Errorf("decode response: %w", err)
 	}
 
 	return result, nil

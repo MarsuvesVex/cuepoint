@@ -17,3 +17,5 @@
 | Fix admin/env defaults | done | Replaced reserved pgAdmin email domain and aligned app connection URLs with overridden Postgres/Redis host ports. |
 | Add root `.env` config loading | done | `packages/config` now searches upward for the repo `.env` file and preserves explicit process env overrides. |
 | Run end-to-end smoke test | done | Brought up Compose services, ran API on `:8088` due local `:8080` conflict, created a marker, and verified worker completion plus stored ffmpeg command. |
+| Add basic README | done | Added setup, run, and smoke-test instructions for the current stack. |
+| Refactor bot command handling | done | Added a reusable bot command framework with `!health` and `!marker` command handlers. |
