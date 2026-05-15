@@ -20,3 +20,5 @@
 | Add basic README | done | Added setup, run, and smoke-test instructions for the current stack. |
 | Refactor bot command handling | done | Added a reusable bot command framework with `!health` and `!marker` command handlers. |
 | Expand bot health/help commands | done | Added `!help`, `!health:all`, `!health:bot`, `!health:server`, and typo-compatible `!heath:server`. |
+| Add czg config | done | Added root `cz.config.cjs` with emoji commit types, Cuepoint scopes, and default prompt text. |
+| Fix czg config shape | done | Switched `cz.config.cjs` to the documented `defineConfig` export so `czg` can load scopes correctly. |
