@@ -41,6 +41,7 @@ type CreateMarkerResult struct {
 
 type Command interface {
 	Name() string
+	Help() string
 	Match(input ParsedInput) bool
 	Run(ctx context.Context, msg Message, input ParsedInput) (string, error)
 }
@@ -59,10 +60,13 @@ func NewHandler(commands ...Command) *Handler {
 }
 
 func NewDefaultHandler(markerClient MarkerClient, healthClient HealthcheckClient) *Handler {
-	return NewHandler(
-		NewHealthcheckCommand(healthClient),
+	commands := []Command{
+		NewHealthAllCommand(healthClient),
+		NewHealthBotCommand(),
+		NewHealthServerCommand(healthClient),
 		NewMarkerCommand(markerClient),
-	)
+	}
+	return NewHandler(append([]Command{NewHelpCommand(commands)}, commands...)...)
 }
 
 func (h *Handler) Handle(ctx context.Context, msg Message) (string, error) {
@@ -139,6 +143,10 @@ func (c *MarkerCommand) Name() string {
 	return "marker"
 }
 
+func (c *MarkerCommand) Help() string {
+	return "!marker <stream> <label> <timestamp> - create a marker and queue a job"
+}
+
 func (c *MarkerCommand) Match(input ParsedInput) bool {
 	return input.Name == c.Name()
 }
@@ -157,25 +165,29 @@ func (c *MarkerCommand) Run(ctx context.Context, _ Message, input ParsedInput) (
 	return fmt.Sprintf("marker=%s job=%s status=%s", result.MarkerID, result.JobID, result.Status), nil
 }
 
-type HealthcheckCommand struct {
+type HealthAllCommand struct {
 	client HealthcheckClient
 }
 
-func NewHealthcheckCommand(client HealthcheckClient) *HealthcheckCommand {
-	return &HealthcheckCommand{client: client}
+func NewHealthAllCommand(client HealthcheckClient) *HealthAllCommand {
+	return &HealthAllCommand{client: client}
 }
 
-func (c *HealthcheckCommand) Name() string {
-	return "health"
+func (c *HealthAllCommand) Name() string {
+	return "health:all"
 }
 
-func (c *HealthcheckCommand) Match(input ParsedInput) bool {
+func (c *HealthAllCommand) Help() string {
+	return "!health:all - show bot and server health"
+}
+
+func (c *HealthAllCommand) Match(input ParsedInput) bool {
 	return input.Name == c.Name()
 }
 
-func (c *HealthcheckCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
+func (c *HealthAllCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
 	if len(input.Args) != 0 {
-		return "", errors.New("usage: !health")
+		return "", errors.New("usage: !health:all")
 	}
 
 	result, err := c.client.Healthcheck(ctx)
@@ -183,7 +195,97 @@ func (c *HealthcheckCommand) Run(ctx context.Context, _ Message, input ParsedInp
 		return "", err
 	}
 
-	return fmt.Sprintf("health=%s", result.Status), nil
+	return fmt.Sprintf("bot=ok server=%s", result.Status), nil
+}
+
+type HealthBotCommand struct{}
+
+func NewHealthBotCommand() *HealthBotCommand {
+	return &HealthBotCommand{}
+}
+
+func (c *HealthBotCommand) Name() string {
+	return "health:bot"
+}
+
+func (c *HealthBotCommand) Help() string {
+	return "!health:bot - show bot health"
+}
+
+func (c *HealthBotCommand) Match(input ParsedInput) bool {
+	return input.Name == c.Name()
+}
+
+func (c *HealthBotCommand) Run(_ context.Context, _ Message, input ParsedInput) (string, error) {
+	if len(input.Args) != 0 {
+		return "", errors.New("usage: !health:bot")
+	}
+	return "bot=ok", nil
+}
+
+type HealthServerCommand struct {
+	client HealthcheckClient
+}
+
+func NewHealthServerCommand(client HealthcheckClient) *HealthServerCommand {
+	return &HealthServerCommand{client: client}
+}
+
+func (c *HealthServerCommand) Name() string {
+	return "health:server"
+}
+
+func (c *HealthServerCommand) Help() string {
+	return "!health:server - show API server health"
+}
+
+func (c *HealthServerCommand) Match(input ParsedInput) bool {
+	return input.Name == c.Name() || input.Name == "heath:server"
+}
+
+func (c *HealthServerCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
+	if len(input.Args) != 0 {
+		return "", errors.New("usage: !health:server")
+	}
+
+	result, err := c.client.Healthcheck(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("server=%s", result.Status), nil
+}
+
+type HelpCommand struct {
+	commands []Command
+}
+
+func NewHelpCommand(commands []Command) *HelpCommand {
+	return &HelpCommand{commands: commands}
+}
+
+func (c *HelpCommand) Name() string {
+	return "help"
+}
+
+func (c *HelpCommand) Help() string {
+	return "!help - show available commands"
+}
+
+func (c *HelpCommand) Match(input ParsedInput) bool {
+	return input.Name == c.Name()
+}
+
+func (c *HelpCommand) Run(_ context.Context, _ Message, input ParsedInput) (string, error) {
+	if len(input.Args) != 0 {
+		return "", errors.New("usage: !help")
+	}
+
+	lines := []string{c.Help()}
+	for _, command := range c.commands {
+		lines = append(lines, command.Help())
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 func parseMarkerArgs(args []string) (stream.CreateMarkerInput, error) {

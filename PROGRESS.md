@@ -19,3 +19,4 @@
 | Run end-to-end smoke test | done | Brought up Compose services, ran API on `:8088` due local `:8080` conflict, created a marker, and verified worker completion plus stored ffmpeg command. |
 | Add basic README | done | Added setup, run, and smoke-test instructions for the current stack. |
 | Refactor bot command handling | done | Added a reusable bot command framework with `!health` and `!marker` command handlers. |
+| Expand bot health/help commands | done | Added `!help`, `!health:all`, `!health:bot`, `!health:server`, and typo-compatible `!heath:server`. |

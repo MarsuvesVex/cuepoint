@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/MarsuvesVex/cuepoint/packages/stream"
@@ -64,12 +65,66 @@ func TestHealthCommand(t *testing.T) {
 	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
 	handler := NewDefaultHandler(client, client)
 
-	reply, err := handler.Handle(context.Background(), Message{Text: "!health"})
+	reply, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	if reply != "health=ok" {
+	if reply != "bot=ok server=ok" {
 		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHealthBotCommand(t *testing.T) {
+	client := fakeClient{}
+	handler := NewDefaultHandler(client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!health:bot"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "bot=ok" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHealthServerCommand(t *testing.T) {
+	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
+	handler := NewDefaultHandler(client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!health:server"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "server=ok" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHealthServerTypoAlias(t *testing.T) {
+	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
+	handler := NewDefaultHandler(client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!heath:server"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "server=ok" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHelpCommand(t *testing.T) {
+	client := fakeClient{}
+	handler := NewDefaultHandler(client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!help"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	for _, want := range []string{"!help", "!health:all", "!health:bot", "!health:server", "!marker"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply %q missing %q", reply, want)
+		}
 	}
 }
 
@@ -100,7 +155,7 @@ func TestHealthError(t *testing.T) {
 	client := fakeClient{healthErr: errors.New("boom")}
 	handler := NewDefaultHandler(client, client)
 
-	_, err := handler.Handle(context.Background(), Message{Text: "!health"})
+	_, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
 	if err == nil {
 		t.Fatal("expected error")
 	}

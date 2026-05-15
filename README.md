@@ -75,7 +75,10 @@ Run the local bot adapter:
 Example bot commands:
 
 ```text
-!health
+!help
+!health:all
+!health:bot
+!health:server
 !marker vod-source.mp4 intro 00:00:10
 ```
 

@@ -25,7 +25,7 @@ func main() {
 	adapter := bot.NewStdinAdapter(os.Stdin)
 	responder := bot.NewWriterResponder(os.Stdout)
 
-	log.Printf("bot ready, enter commands like !health or !marker <stream> <label> <timestamp>")
+	log.Printf("bot ready, enter commands like !help, !health:all, !health:bot, !health:server, or !marker <stream> <label> <timestamp>")
 	if err := bot.Run(ctx, adapter, responder, handler); err != nil {
 		log.Fatalf("run bot: %v", err)
 	}
