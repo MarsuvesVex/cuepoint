@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cuepoint
+      POSTGRES_USER: cuepoint
+      POSTGRES_PASSWORD: cuepoint
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - default
+      - traefik
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@cuepoint.app}
+      PGADMIN_DEFAULT_PASSWORD: cuepoint
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - default
+      - traefik
+    labels:
+      - "traefik.enable=${TRAEFIK_ENABLED:-true}"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.cuepoint-pgadmin.rule=Host(`${PGADMIN_HOST:-pgadmin-cuepoint.dev.local}`)"
+      - "traefik.http.routers.cuepoint-pgadmin.entrypoints=${TRAEFIK_ENTRYPOINT:-web}"
+      - "traefik.http.routers.cuepoint-pgadmin.tls=${TRAEFIK_TLS:-false}"
+      - "traefik.http.services.cuepoint-pgadmin.loadbalancer.server.port=80"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - default
+      - traefik
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - "${REDISINSIGHT_PORT:-5540}:5540"
+    volumes:
+      - redisinsight-data:/data
+    depends_on:
+      - redis
+    networks:
+      - default
+      - traefik
+    labels:
+      - "traefik.enable=${TRAEFIK_ENABLED:-true}"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.cuepoint-redisinsight.rule=Host(`${REDISINSIGHT_HOST:-redisinsight-cuepoint.dev.local}`)"
+      - "traefik.http.routers.cuepoint-redisinsight.entrypoints=${TRAEFIK_ENTRYPOINT:-web}"
+      - "traefik.http.routers.cuepoint-redisinsight.tls=${TRAEFIK_TLS:-false}"
+      - "traefik.http.services.cuepoint-redisinsight.loadbalancer.server.port=5540"
+
+volumes:
+  postgres-data:
+  pgadmin-data:
+  redis-data:
+  redisinsight-data:
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
