@@ -1,7 +1,10 @@
 module.exports = {
   extends: ["semantic-release-config-gitmoji"],
 
-  branches: ["main"],
+  branches: ["main",
+      { name: "next", channel: "next", prerelease: "rc" },
+    { name: "beta", prerelease: true },
+    { name: "alpha", prerelease: true }],
 
   tagFormat: "v${version}",
 
