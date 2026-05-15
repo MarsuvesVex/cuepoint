@@ -1,20 +1,30 @@
 module.exports = {
   extends: ["semantic-release-config-gitmoji"],
 
-  branches: ["master"],
+  branches: ["main"],
+
+  tagFormat: "v${version}",
 
   plugins: [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
-    "@semantic-release/changelog",
-    "@semantic-release/github",
+
+    [
+      "@semantic-release/changelog",
+      {
+        changelogFile: "CHANGELOG.md",
+      },
+    ],
+
     [
       "@semantic-release/git",
       {
         assets: ["CHANGELOG.md"],
         message:
-          "🔖 release: ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
+          "🔖 release: v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}",
       },
     ],
+
+    "@semantic-release/github",
   ],
 };
