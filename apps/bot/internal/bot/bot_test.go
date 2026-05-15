@@ -1,11 +1,15 @@
 package bot
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/MarsuvesVex/cuepoint/packages/config"
 	"github.com/MarsuvesVex/cuepoint/packages/stream"
 )
 
@@ -63,26 +67,90 @@ func TestMarkerCommand(t *testing.T) {
 
 func TestHealthCommand(t *testing.T) {
 	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
-	handler := NewDefaultHandler(client, client)
+	runtime := &RuntimeStatus{
+		startedAt: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		now: func() time.Time {
+			return time.Date(2026, 5, 16, 0, 0, 45, 0, time.UTC)
+		},
+	}
+	handler := NewHandler(
+		NewHelpCommand([]Command{
+			NewHealthAllCommand(client, runtime),
+			NewHealthBotCommand(runtime),
+			NewHealthServerCommand(client),
+			NewMarkerCommand(client),
+		}),
+		NewHealthAllCommand(client, runtime),
+		NewHealthBotCommand(runtime),
+		NewHealthServerCommand(client),
+		NewMarkerCommand(client),
+	)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	if reply != "bot=ok server=ok" {
+	if reply != "bot=ok uptime=45s server=ok" {
 		t.Fatalf("reply = %q", reply)
 	}
 }
 
 func TestHealthBotCommand(t *testing.T) {
 	client := fakeClient{}
-	handler := NewDefaultHandler(client, client)
+	runtime := &RuntimeStatus{
+		startedAt: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		now: func() time.Time {
+			return time.Date(2026, 5, 16, 0, 1, 5, 0, time.UTC)
+		},
+	}
+	handler := NewHandler(
+		NewHelpCommand([]Command{
+			NewHealthAllCommand(client, runtime),
+			NewHealthBotCommand(runtime),
+			NewHealthServerCommand(client),
+			NewMarkerCommand(client),
+		}),
+		NewHealthAllCommand(client, runtime),
+		NewHealthBotCommand(runtime),
+		NewHealthServerCommand(client),
+		NewMarkerCommand(client),
+	)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health:bot"})
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	if reply != "bot=ok" {
+	if reply != "bot=ok uptime=1m5s" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestHealthAliasCommand(t *testing.T) {
+	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
+	runtime := &RuntimeStatus{
+		startedAt: time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
+		now: func() time.Time {
+			return time.Date(2026, 5, 16, 0, 0, 9, 0, time.UTC)
+		},
+	}
+	handler := NewHandler(
+		NewHelpCommand([]Command{
+			NewHealthAllCommand(client, runtime),
+			NewHealthBotCommand(runtime),
+			NewHealthServerCommand(client),
+			NewMarkerCommand(client),
+		}),
+		NewHealthAllCommand(client, runtime),
+		NewHealthBotCommand(runtime),
+		NewHealthServerCommand(client),
+		NewMarkerCommand(client),
+	)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!health"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "bot=ok uptime=9s server=ok" {
 		t.Fatalf("reply = %q", reply)
 	}
 }
@@ -126,6 +194,9 @@ func TestHelpCommand(t *testing.T) {
 			t.Fatalf("reply %q missing %q", reply, want)
 		}
 	}
+	if strings.Contains(reply, "\n") {
+		t.Fatalf("reply %q should be single-line", reply)
+	}
 }
 
 func TestUnknownCommand(t *testing.T) {
@@ -158,5 +229,68 @@ func TestHealthError(t *testing.T) {
 	_, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestParseTwitchPrivmsg(t *testing.T) {
+	msg, ok := parseTwitchPrivmsg(":testuser!testuser@testuser.tmi.twitch.tv PRIVMSG #cuepoint :!help")
+	if !ok {
+		t.Fatal("expected message to parse")
+	}
+	if msg.User != "testuser" || msg.Channel != "cuepoint" || msg.Text != "!help" {
+		t.Fatalf("unexpected message: %+v", msg)
+	}
+}
+
+func TestNormalizeOAuthToken(t *testing.T) {
+	if got := normalizeOAuthToken("token"); got != "oauth:token" {
+		t.Fatalf("token = %q", got)
+	}
+	if got := normalizeOAuthToken("oauth:token"); got != "oauth:token" {
+		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestTwitchReply(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+
+	adapter := &TwitchAdapter{
+		cfg:    config.TwitchConfig{Channel: "cuepoint"},
+		conn:   client,
+		reader: bufio.NewReader(client),
+		writer: bufio.NewWriter(client),
+	}
+	defer adapter.Close()
+
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 256)
+		n, _ := server.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	if err := adapter.Reply(context.Background(), Message{Channel: "cuepoint"}, "hello"); err != nil {
+		t.Fatalf("Reply returned error: %v", err)
+	}
+
+	if line := <-done; line != "PRIVMSG #cuepoint :hello\r\n" {
+		t.Fatalf("line = %q", line)
+	}
+}
+
+func TestNewTwitchAdapterRejectsAddressAsChannel(t *testing.T) {
+	_, err := NewTwitchAdapter(context.Background(), config.TwitchConfig{
+		Username:   "botuser",
+		OAuthToken: "oauth:token",
+		Channel:    "irc.chat.twitch.tv:6697",
+		Addr:       "irc.chat.twitch.tv:6697",
+		UseTLS:     true,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "did you mean to set BOT_TWITCH_ADDR") {
+		t.Fatalf("err = %v", err)
 	}
 }

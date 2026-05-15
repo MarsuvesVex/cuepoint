@@ -1,4 +1,60 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_DIR: apps/api
+        APP_CMD: ./cmd/api
+    environment:
+      API_ADDR: :${API_CONTAINER_PORT:-8080}
+      API_BASE_URL: http://api:${API_CONTAINER_PORT:-8080}
+      DATABASE_URL: postgres://cuepoint:cuepoint@postgres:5432/cuepoint?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_DB: ${REDIS_DB:-0}
+      QUEUE_NAME: ${QUEUE_NAME:-cuepoint:jobs}
+    ports:
+      - "${API_PORT:-8088}:${API_CONTAINER_PORT:-8080}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - default
+      - traefik
+    labels:
+      - "traefik.enable=${TRAEFIK_ENABLED:-true}"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.cuepoint-api.rule=Host(`${API_HOST:-api-cuepoint.dev.local}`)"
+      - "traefik.http.routers.cuepoint-api.entrypoints=${TRAEFIK_ENTRYPOINT:-web}"
+      - "traefik.http.routers.cuepoint-api.tls=${TRAEFIK_TLS:-false}"
+      - "traefik.http.services.cuepoint-api.loadbalancer.server.port=${API_CONTAINER_PORT:-8080}"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_DIR: apps/worker
+        APP_CMD: ./cmd/worker
+    environment:
+      DATABASE_URL: postgres://cuepoint:cuepoint@postgres:5432/cuepoint?sslmode=disable
+      REDIS_ADDR: redis:6379
+      REDIS_DB: ${REDIS_DB:-0}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5s}
+      WORKER_BLOCK_TIMEOUT: ${WORKER_BLOCK_TIMEOUT:-5s}
+      QUEUE_NAME: ${QUEUE_NAME:-cuepoint:jobs}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    networks:
+      - default
+
   postgres:
     image: postgres:17-alpine
     environment:
@@ -9,6 +65,11 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cuepoint -d cuepoint"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - default
       - traefik
@@ -42,6 +103,11 @@ services:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - default
       - traefik

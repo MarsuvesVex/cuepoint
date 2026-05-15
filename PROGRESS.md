@@ -22,3 +22,8 @@
 | Expand bot health/help commands | done | Added `!help`, `!health:all`, `!health:bot`, `!health:server`, and typo-compatible `!heath:server`. |
 | Add czg config | done | Added root `cz.config.cjs` with emoji commit types, Cuepoint scopes, and default prompt text. |
 | Fix czg config shape | done | Switched `cz.config.cjs` to the documented `defineConfig` export so `czg` can load scopes correctly. |
+| Containerize API and worker | done | Added shared Docker build config, Compose services, health-aware dependencies, and verified a containerized marker-to-worker flow via API on temporary host port `8090`. |
+| Start Twitch integration | done | Added a first Twitch IRC adapter, env-driven bot transport selection, Twitch config fields, and tests for IRC parsing/reply behavior. |
+| Fix Twitch bot config validation | done | Corrected `.env` channel wiring, added legacy `TWITCH_*` env fallbacks, and reject channel values that look like IRC addresses. |
+| Add bot debug logging | done | Added leveled bot/Twitch diagnostics and changed `!help` to single-line chat-safe output. |
+| Add bot uptime health output | done | Added uptime to bot health replies and made `!health` an alias for `!health:all`. |

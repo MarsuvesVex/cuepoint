@@ -6,7 +6,7 @@ Cuepoint is a Go monorepo for stream scheduling, chatbot markers, VOD download l
 
 - `apps/api` exposes the HTTP API.
 - `apps/worker` processes queued jobs and stores generated ffmpeg commands.
-- `apps/bot` provides a transport-agnostic bot framework with a local stdin adapter today.
+- `apps/bot` provides a transport-agnostic bot framework with local stdin and Twitch IRC adapters.
 - `apps/cli` provides local admin and smoke-test commands.
 - `packages/*` contains shared config, domain, storage, queue, and ffmpeg logic.
 
@@ -17,7 +17,7 @@ Cuepoint is a Go monorepo for stream scheduling, chatbot markers, VOD download l
 
 ## Local stack
 
-Start the local infrastructure:
+Start the full local stack:
 
 ```bash
 docker compose up -d
@@ -25,7 +25,7 @@ docker compose up -d
 
 Default local ports come from [.env](/home/hamish/Development/MarsuvesVex/public-projects/cuepoint/.env):
 
-- API: `8080`
+- API host port: `8088`
 - Postgres: `5439`
 - pgAdmin: `5054`
 - Redis: `6378`
@@ -43,17 +43,29 @@ make test
 make build
 ```
 
-## Run the apps
+This now includes:
 
-Each binary loads values from the root `.env` file automatically.
+- `api`
+- `worker`
+- `postgres`
+- `pgadmin`
+- `redis`
+- `redisinsight`
 
-Start the API:
+The `api` and `worker` containers override the host-style `.env` values with container-native service addresses for Postgres and Redis.
+The API container listens internally on `API_CONTAINER_PORT` and is published on `API_PORT`, so host port conflicts can be resolved without changing the container wiring.
+
+## Run the apps manually
+
+Each binary still loads values from the root `.env` file automatically, so you can run them outside Compose when needed.
+
+Start the API manually:
 
 ```bash
 ./apps/api/api
 ```
 
-Start the worker:
+Start the worker manually:
 
 ```bash
 ./apps/worker/worker
@@ -72,10 +84,28 @@ Run the local bot adapter:
 ./apps/bot/bot
 ```
 
+To use Twitch chat instead of stdin, set these values in `.env` before running the bot:
+
+```bash
+BOT_TRANSPORT=twitch
+BOT_LOG_LEVEL=debug
+BOT_TWITCH_USERNAME=your_bot_username
+BOT_TWITCH_OAUTH_TOKEN=oauth:your_token
+BOT_TWITCH_CHANNEL=your_channel
+```
+
+Bot log levels:
+
+- `debug` shows IRC connection, parsed commands, ignored IRC lines, and sent replies
+- `info` shows startup, transport selection, connect/join, and shutdown events
+- `warn` shows command handling problems
+- `error` shows only failures
+
 Example bot commands:
 
 ```text
 !help
+!health
 !health:all
 !health:bot
 !health:server
@@ -85,7 +115,7 @@ Example bot commands:
 ## Current workflow
 
 1. Start Compose services.
-2. Run the API and worker.
+2. Use the CLI or bot against the running API.
 3. Create a marker through the CLI or bot.
 4. Fetch the job and confirm the stored ffmpeg command.
 

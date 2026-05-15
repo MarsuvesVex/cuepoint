@@ -1,0 +1,9 @@
+.git
+.agents
+.codex
+tmp
+*.log
+apps/api/api
+apps/bot/bot
+apps/cli/cuepoint
+apps/worker/worker

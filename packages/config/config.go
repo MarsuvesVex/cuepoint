@@ -12,15 +12,18 @@ import (
 )
 
 const (
-	defaultAPIAddr     = ":8080"
-	defaultDatabaseURL = "postgres://cuepoint:cuepoint@127.0.0.1:5432/cuepoint?sslmode=disable"
-	defaultRedisAddr   = "127.0.0.1:6379"
-	defaultRedisDB     = 0
-	defaultWorkerPoll  = 5 * time.Second
-	defaultWorkerBlock = 5 * time.Second
-	defaultAPIBaseURL  = "http://127.0.0.1:8080"
-	defaultBotPrompt   = "> "
-	defaultQueueName   = "cuepoint:jobs"
+	defaultAPIAddr      = ":8080"
+	defaultDatabaseURL  = "postgres://cuepoint:cuepoint@127.0.0.1:5432/cuepoint?sslmode=disable"
+	defaultRedisAddr    = "127.0.0.1:6379"
+	defaultRedisDB      = 0
+	defaultWorkerPoll   = 5 * time.Second
+	defaultWorkerBlock  = 5 * time.Second
+	defaultAPIBaseURL   = "http://127.0.0.1:8080"
+	defaultBotPrompt    = "> "
+	defaultBotTransport = "stdin"
+	defaultBotLogLevel  = "info"
+	defaultTwitchAddr   = "irc.chat.twitch.tv:6697"
+	defaultQueueName    = "cuepoint:jobs"
 )
 
 type Config struct {
@@ -54,10 +57,21 @@ type WorkerConfig struct {
 type BotConfig struct {
 	APIBaseURL string
 	Prompt     string
+	Transport  string
+	LogLevel   string
+	Twitch     TwitchConfig
 }
 
 type CLIConfig struct {
 	APIBaseURL string
+}
+
+type TwitchConfig struct {
+	Username   string
+	OAuthToken string
+	Channel    string
+	Addr       string
+	UseTLS     bool
 }
 
 var loadEnvOnce sync.Once
@@ -82,6 +96,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	useTLS, err := boolFromEnv("BOT_TWITCH_TLS", true)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		API: APIConfig{
 			Addr: stringFromEnv("API_ADDR", defaultAPIAddr),
@@ -100,6 +119,15 @@ func Load() (Config, error) {
 		Bot: BotConfig{
 			APIBaseURL: stringFromEnv("BOT_API_BASE_URL", stringFromEnv("API_BASE_URL", defaultAPIBaseURL)),
 			Prompt:     stringFromEnv("BOT_PROMPT", defaultBotPrompt),
+			Transport:  stringFromEnv("BOT_TRANSPORT", defaultBotTransport),
+			LogLevel:   stringFromEnv("BOT_LOG_LEVEL", defaultBotLogLevel),
+			Twitch: TwitchConfig{
+				Username:   stringFromEnv("BOT_TWITCH_USERNAME", stringFromEnv("TWITCH_BOT_USERNAME", "")),
+				OAuthToken: stringFromEnv("BOT_TWITCH_OAUTH_TOKEN", stringFromEnv("TWITCH_OAUTH_TOKEN", "")),
+				Channel:    stringFromEnv("BOT_TWITCH_CHANNEL", stringFromEnv("TWITCH_CHANNEL", "")),
+				Addr:       stringFromEnv("BOT_TWITCH_ADDR", defaultTwitchAddr),
+				UseTLS:     useTLS,
+			},
 		},
 		CLI: CLIConfig{
 			APIBaseURL: stringFromEnv("CLI_API_BASE_URL", stringFromEnv("API_BASE_URL", defaultAPIBaseURL)),
@@ -124,6 +152,20 @@ func intFromEnv(key string, fallback int) (int, error) {
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
 		return 0, fmt.Errorf("%s: parse int: %w", key, err)
+	}
+
+	return parsed, nil
+}
+
+func boolFromEnv(key string, fallback bool) (bool, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s: parse bool: %w", key, err)
 	}
 
 	return parsed, nil

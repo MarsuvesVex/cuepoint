@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/MarsuvesVex/cuepoint/packages/stream"
 )
@@ -55,18 +56,37 @@ type Handler struct {
 	commands []Command
 }
 
+type RuntimeStatus struct {
+	startedAt time.Time
+	now       func() time.Time
+}
+
 func NewHandler(commands ...Command) *Handler {
 	return &Handler{commands: commands}
 }
 
 func NewDefaultHandler(markerClient MarkerClient, healthClient HealthcheckClient) *Handler {
+	runtime := NewRuntimeStatus()
 	commands := []Command{
-		NewHealthAllCommand(healthClient),
-		NewHealthBotCommand(),
+		NewHealthAllCommand(healthClient, runtime),
+		NewHealthBotCommand(runtime),
 		NewHealthServerCommand(healthClient),
 		NewMarkerCommand(markerClient),
 	}
 	return NewHandler(append([]Command{NewHelpCommand(commands)}, commands...)...)
+}
+
+func NewRuntimeStatus() *RuntimeStatus {
+	return &RuntimeStatus{
+		startedAt: time.Now().UTC(),
+		now: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+}
+
+func (r *RuntimeStatus) Uptime() time.Duration {
+	return r.now().Sub(r.startedAt).Round(time.Second)
 }
 
 func (h *Handler) Handle(ctx context.Context, msg Message) (string, error) {
@@ -85,10 +105,19 @@ func (h *Handler) Handle(ctx context.Context, msg Message) (string, error) {
 }
 
 func Run(ctx context.Context, adapter Adapter, responder Responder, handler *Handler) error {
+	return RunWithLogger(ctx, adapter, responder, handler, nil)
+}
+
+func RunWithLogger(ctx context.Context, adapter Adapter, responder Responder, handler *Handler, logger *Logger) error {
+	if logger == nil {
+		logger = NewLogger("info", nil)
+	}
+
 	messages, errs := adapter.Receive(ctx)
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Infof("shutting down bot loop")
 			return nil
 		case err, ok := <-errs:
 			if !ok {
@@ -96,23 +125,31 @@ func Run(ctx context.Context, adapter Adapter, responder Responder, handler *Han
 				continue
 			}
 			if err != nil {
+				logger.Errorf("adapter receive error: %v", err)
 				return err
 			}
 		case msg, ok := <-messages:
 			if !ok {
+				logger.Infof("adapter message channel closed")
 				return nil
 			}
+			logger.Debugf("received message channel=%s user=%s text=%q", msg.Channel, msg.User, msg.Text)
 			reply, err := handler.Handle(ctx, msg)
 			if err != nil {
+				logger.Warnf("command handling failed for %q: %v", msg.Text, err)
 				if respondErr := responder.Reply(ctx, msg, "error: "+err.Error()); respondErr != nil {
+					logger.Errorf("failed to send error reply: %v", respondErr)
 					return respondErr
 				}
 				continue
 			}
 			if reply == "" {
+				logger.Debugf("no reply generated for %q", msg.Text)
 				continue
 			}
+			logger.Debugf("sending reply channel=%s user=%s text=%q", msg.Channel, msg.User, reply)
 			if err := responder.Reply(ctx, msg, reply); err != nil {
+				logger.Errorf("failed to send reply: %v", err)
 				return err
 			}
 		}
@@ -166,11 +203,12 @@ func (c *MarkerCommand) Run(ctx context.Context, _ Message, input ParsedInput) (
 }
 
 type HealthAllCommand struct {
-	client HealthcheckClient
+	client  HealthcheckClient
+	runtime *RuntimeStatus
 }
 
-func NewHealthAllCommand(client HealthcheckClient) *HealthAllCommand {
-	return &HealthAllCommand{client: client}
+func NewHealthAllCommand(client HealthcheckClient, runtime *RuntimeStatus) *HealthAllCommand {
+	return &HealthAllCommand{client: client, runtime: runtime}
 }
 
 func (c *HealthAllCommand) Name() string {
@@ -182,7 +220,7 @@ func (c *HealthAllCommand) Help() string {
 }
 
 func (c *HealthAllCommand) Match(input ParsedInput) bool {
-	return input.Name == c.Name()
+	return input.Name == c.Name() || input.Name == "health"
 }
 
 func (c *HealthAllCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
@@ -195,13 +233,15 @@ func (c *HealthAllCommand) Run(ctx context.Context, _ Message, input ParsedInput
 		return "", err
 	}
 
-	return fmt.Sprintf("bot=ok server=%s", result.Status), nil
+	return fmt.Sprintf("bot=ok uptime=%s server=%s", c.runtime.Uptime(), result.Status), nil
 }
 
-type HealthBotCommand struct{}
+type HealthBotCommand struct {
+	runtime *RuntimeStatus
+}
 
-func NewHealthBotCommand() *HealthBotCommand {
-	return &HealthBotCommand{}
+func NewHealthBotCommand(runtime *RuntimeStatus) *HealthBotCommand {
+	return &HealthBotCommand{runtime: runtime}
 }
 
 func (c *HealthBotCommand) Name() string {
@@ -220,7 +260,7 @@ func (c *HealthBotCommand) Run(_ context.Context, _ Message, input ParsedInput) 
 	if len(input.Args) != 0 {
 		return "", errors.New("usage: !health:bot")
 	}
-	return "bot=ok", nil
+	return fmt.Sprintf("bot=ok uptime=%s", c.runtime.Uptime()), nil
 }
 
 type HealthServerCommand struct {
@@ -285,7 +325,7 @@ func (c *HelpCommand) Run(_ context.Context, _ Message, input ParsedInput) (stri
 	for _, command := range c.commands {
 		lines = append(lines, command.Help())
 	}
-	return strings.Join(lines, "\n"), nil
+	return strings.Join(lines, " | "), nil
 }
 
 func parseMarkerArgs(args []string) (stream.CreateMarkerInput, error) {
