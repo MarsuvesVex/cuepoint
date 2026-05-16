@@ -33,6 +33,22 @@ func (s *fakeStore) CompleteJob(_ context.Context, _ string, command string) err
 }
 
 func (s *fakeStore) FailJob(context.Context, string, string) error { return nil }
+func (s *fakeStore) ListPendingAutomationJobIDs(context.Context, int) ([]string, error) {
+	return nil, nil
+}
+func (s *fakeStore) ClaimAutomationJob(context.Context, string) (stream.AutomationJob, bool, error) {
+	return stream.AutomationJob{}, false, nil
+}
+func (s *fakeStore) GetPlanSegment(context.Context, string) (stream.PlanSegment, error) {
+	return stream.PlanSegment{}, nil
+}
+func (s *fakeStore) UpdateSegmentMetadata(context.Context, string, string, string, string, string, stream.MetadataStatus, string) error {
+	return nil
+}
+func (s *fakeStore) CompleteAutomationJob(context.Context, string) error { return nil }
+func (s *fakeStore) FailAutomationJob(context.Context, string, string) error {
+	return nil
+}
 
 type fakeQueue struct {
 	dequeued []string

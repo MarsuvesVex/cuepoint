@@ -6,7 +6,10 @@
   "scripts": {
     "commit": "cz",
     "prepare": "husky",
-    "release": "semantic-release"
+    "release": "semantic-release",
+    "web:dev": "pnpm --dir apps/web dev",
+    "web:build": "pnpm --dir apps/web build",
+    "web:lint": "pnpm --dir apps/web lint"
   },
   "keywords": [],
   "author": "",

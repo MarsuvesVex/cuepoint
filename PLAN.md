@@ -1,38 +1,39 @@
-# Marker Pipeline v1 Plan
+# Cuepoint Control Center v1
 
 ## Summary
 
-Implement the first end-to-end vertical slice for Cuepoint using Postgres and Redis from day one. The initial workflow creates stream markers through the API, persists them in Postgres, enqueues background jobs in Redis, and lets the worker turn those jobs into stored ffmpeg command output. The bot remains transport-agnostic so a Twitch adapter can be added next without changing command logic.
+Implement a hybrid control center:
 
-## Key Changes
+- `apps/web` owns the operator UI, Better Auth, Twitch account linking, server actions, and OBS overlay routes.
+- `apps/api` owns bot/runtime orchestration for session sync, segment advancement, title automation, and marker writes.
+- `apps/bot` owns chat command parsing plus periodic live-session sync.
+- `apps/worker` owns asynchronous YouTube metadata enrichment.
+- Postgres remains the shared state store for plans, segments, runtime sessions, markers, settings, and automation jobs.
 
-- Add a root `docker-compose.yml` with Postgres and Redis for local development.
-- Add shared packages for config, database access, Redis queueing, stream domain services, and ffmpeg command generation.
-- Implement four binaries:
-  - API with health, marker creation, marker lookup, and job lookup
-  - Worker with Redis-driven job processing and startup requeue of pending jobs
-  - Bot with adapter interfaces plus a local stdin adapter
-  - CLI for health and marker/job inspection flows
-- Keep app-specific wiring under `apps/*/internal`.
+## Implemented In This Pass
 
-## Public Interfaces
+- Added a new `apps/web` Next.js workspace scaffold with App Router, Tailwind, and shadcn-style UI primitives.
+- Added Better Auth wiring, Twitch sign-in entrypoint, Twitch profile sync, internal Twitch proxy routes, and public overlay data routes.
+- Added control-center data tables through embedded SQL migrations in `packages/database`.
+- Added shared stream/runtime domain types for plans, segments, sessions, markers, settings, and automation jobs.
+- Added API runtime endpoints for session sync, title apply/restore/toggle, title format management, segment start/advance, and timeline markers.
+- Added bot commands:
+  - `!settitle`
+  - `!restoretitle`
+  - `!toggletitles`
+  - `!titleformat`
+  - `!viewtitleformat`
+  - `!resettitleformat`
+  - `!watching`
+  - `!react`
+  - `!nextsegment`
+  - `!marker <label> [end]` for timeline markers alongside the legacy ffmpeg marker flow
+- Added worker support for `youtube_metadata_sync` automation jobs via YouTube oEmbed.
 
-- HTTP API:
-  - `GET /healthz`
-  - `POST /markers`
-  - `GET /markers/{id}`
-  - `GET /jobs/{id}`
-- Bot command:
-  - `!marker <stream> <label> <timestamp>`
-- CLI commands:
-  - `cuepoint health`
-  - `cuepoint marker create --stream ... --label ... --timestamp ...`
-  - `cuepoint marker get --id ...`
-  - `cuepoint job get --id ...`
+## Remaining Next Steps
 
-## Test Plan
-
-- Unit tests for ffmpeg command generation and stream service behavior.
-- Handler tests for API validation and successful marker creation.
-- Bot parser tests for transport-neutral command handling.
-- Build verification for all four binaries and package tests under `make test`.
+- Install web dependencies and run frontend verification (`pnpm install`, `pnpm --dir apps/web build`, and lint/type-check passes).
+- Add committed Better Auth table migrations once the exact generated schema is locked from a dependency install.
+- Expand server-side validation in the web app for plan/segment forms and replace free-text status/type inputs with constrained UI controls.
+- Add integration tests for internal API runtime routes, title formatting behavior, marker pairing, and worker YouTube metadata processing.
+- Add overlay styling refinements and a stronger public overlay token story if the current `overlay_public_id` needs rotation or revocation flows.

@@ -17,6 +17,12 @@ type Store interface {
 	ClaimJob(ctx context.Context, jobID string) (stream.Job, stream.Marker, bool, error)
 	CompleteJob(ctx context.Context, jobID, command string) error
 	FailJob(ctx context.Context, jobID, reason string) error
+	ListPendingAutomationJobIDs(ctx context.Context, limit int) ([]string, error)
+	ClaimAutomationJob(ctx context.Context, jobID string) (stream.AutomationJob, bool, error)
+	GetPlanSegment(ctx context.Context, segmentID string) (stream.PlanSegment, error)
+	UpdateSegmentMetadata(ctx context.Context, segmentID, videoID, videoTitle, creatorName, canonicalURL string, status stream.MetadataStatus, metadataError string) error
+	CompleteAutomationJob(ctx context.Context, jobID string) error
+	FailAutomationJob(ctx context.Context, jobID, reason string) error
 }
 
 type Queue interface {
@@ -56,6 +62,9 @@ func (p *Processor) Run(ctx context.Context) error {
 		jobID, err := p.queue.DequeueJob(ctx, p.blockTimeout)
 		if err != nil {
 			if errors.Is(err, events.ErrQueueEmpty) || errors.Is(err, context.DeadlineExceeded) {
+				if err := p.processAutomationJob(ctx); err != nil {
+					p.logger.Printf("process automation job: %v", err)
+				}
 				continue
 			}
 			if ctx.Err() != nil {

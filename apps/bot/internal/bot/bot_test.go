@@ -18,6 +18,9 @@ type fakeClient struct {
 	createErr    error
 	healthResult HealthcheckResult
 	healthErr    error
+	runtimeState stream.RuntimeState
+	titleFormat  RuntimeTitleFormatResult
+	runtimeErr   error
 }
 
 func (c fakeClient) CreateMarker(context.Context, stream.CreateMarkerInput) (CreateMarkerResult, error) {
@@ -26,6 +29,42 @@ func (c fakeClient) CreateMarker(context.Context, stream.CreateMarkerInput) (Cre
 
 func (c fakeClient) Healthcheck(context.Context) (HealthcheckResult, error) {
 	return c.healthResult, c.healthErr
+}
+
+func (c fakeClient) SyncSession(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) GetRuntime(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) ApplyCurrentTitle(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) RestoreTitle(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) ToggleTitles(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) SetTitleFormat(context.Context, string, string, bool) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) GetTitleFormat(context.Context, string) (RuntimeTitleFormatResult, error) {
+	return c.titleFormat, nil
+}
+
+func (c fakeClient) AdvanceSegment(context.Context, string) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
+}
+
+func (c fakeClient) AddTimelineMarker(context.Context, string, string, bool) (stream.RuntimeState, error) {
+	return c.runtimeState, c.runtimeErr
 }
 
 func TestParseCommand(t *testing.T) {
@@ -54,7 +93,7 @@ func TestMarkerCommand(t *testing.T) {
 			JobID:    "job-1",
 			Status:   "pending",
 		},
-	}, fakeClient{})
+	}, fakeClient{}, fakeClient{})
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!marker stream clip 00:00:10"})
 	if err != nil {
@@ -78,12 +117,12 @@ func TestHealthCommand(t *testing.T) {
 			NewHealthAllCommand(client, runtime),
 			NewHealthBotCommand(runtime),
 			NewHealthServerCommand(client),
-			NewMarkerCommand(client),
+			NewMarkerCommand(client, client),
 		}),
 		NewHealthAllCommand(client, runtime),
 		NewHealthBotCommand(runtime),
 		NewHealthServerCommand(client),
-		NewMarkerCommand(client),
+		NewMarkerCommand(client, client),
 	)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
@@ -108,12 +147,12 @@ func TestHealthBotCommand(t *testing.T) {
 			NewHealthAllCommand(client, runtime),
 			NewHealthBotCommand(runtime),
 			NewHealthServerCommand(client),
-			NewMarkerCommand(client),
+			NewMarkerCommand(client, client),
 		}),
 		NewHealthAllCommand(client, runtime),
 		NewHealthBotCommand(runtime),
 		NewHealthServerCommand(client),
-		NewMarkerCommand(client),
+		NewMarkerCommand(client, client),
 	)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health:bot"})
@@ -138,12 +177,12 @@ func TestHealthAliasCommand(t *testing.T) {
 			NewHealthAllCommand(client, runtime),
 			NewHealthBotCommand(runtime),
 			NewHealthServerCommand(client),
-			NewMarkerCommand(client),
+			NewMarkerCommand(client, client),
 		}),
 		NewHealthAllCommand(client, runtime),
 		NewHealthBotCommand(runtime),
 		NewHealthServerCommand(client),
-		NewMarkerCommand(client),
+		NewMarkerCommand(client, client),
 	)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health"})
@@ -157,7 +196,7 @@ func TestHealthAliasCommand(t *testing.T) {
 
 func TestHealthServerCommand(t *testing.T) {
 	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!health:server"})
 	if err != nil {
@@ -170,7 +209,7 @@ func TestHealthServerCommand(t *testing.T) {
 
 func TestHealthServerTypoAlias(t *testing.T) {
 	client := fakeClient{healthResult: HealthcheckResult{Status: "ok"}}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!heath:server"})
 	if err != nil {
@@ -183,13 +222,13 @@ func TestHealthServerTypoAlias(t *testing.T) {
 
 func TestHelpCommand(t *testing.T) {
 	client := fakeClient{}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!help"})
 	if err != nil {
 		t.Fatalf("Handle returned error: %v", err)
 	}
-	for _, want := range []string{"!help", "!health:all", "!health:bot", "!health:server", "!marker"} {
+	for _, want := range []string{"!help", "!health", "!marker", "!react", "!nextsegment"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("reply %q missing %q", reply, want)
 		}
@@ -199,9 +238,24 @@ func TestHelpCommand(t *testing.T) {
 	}
 }
 
+func TestHelpTopicCommand(t *testing.T) {
+	client := fakeClient{}
+	handler := NewDefaultHandler(client, client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Text: "!help runtime"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	for _, want := range []string{"!react", "!watching", "!nextsegment"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("reply %q missing %q", reply, want)
+		}
+	}
+}
+
 func TestUnknownCommand(t *testing.T) {
 	client := fakeClient{}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
 	reply, err := handler.Handle(context.Background(), Message{Text: "!nope"})
 	if err != nil {
@@ -214,9 +268,9 @@ func TestUnknownCommand(t *testing.T) {
 
 func TestMarkerUsageError(t *testing.T) {
 	client := fakeClient{}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
-	_, err := handler.Handle(context.Background(), Message{Text: "!marker stream clip"})
+	_, err := handler.Handle(context.Background(), Message{Text: "!marker"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -224,11 +278,62 @@ func TestMarkerUsageError(t *testing.T) {
 
 func TestHealthError(t *testing.T) {
 	client := fakeClient{healthErr: errors.New("boom")}
-	handler := NewDefaultHandler(client, client)
+	handler := NewDefaultHandler(client, client, client)
 
 	_, err := handler.Handle(context.Background(), Message{Text: "!health:all"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestNextSegmentOfflineReply(t *testing.T) {
+	client := fakeClient{
+		runtimeErr: &APIError{StatusCode: 400, Message: "stream is not live"},
+	}
+	handler := NewDefaultHandler(client, client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Channel: "cuepoint", Text: "!nextsegment"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "stream=offline" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestNextSegmentRuntimeUnavailableReply(t *testing.T) {
+	client := fakeClient{
+		runtimeErr: &APIError{StatusCode: 404, Message: "404 Not Found"},
+	}
+	handler := NewDefaultHandler(client, client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Channel: "cuepoint", Text: "!nextsegment"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "runtime unavailable" {
+		t.Fatalf("reply = %q", reply)
+	}
+}
+
+func TestReactNoActiveReactSegmentReply(t *testing.T) {
+	client := fakeClient{
+		runtimeState: stream.RuntimeState{
+			IsLive: true,
+			ActiveSegment: &stream.PlanSegment{
+				SegmentType:  stream.SegmentTypeStandard,
+				SegmentTitle: "Intro",
+			},
+		},
+	}
+	handler := NewDefaultHandler(client, client, client)
+
+	reply, err := handler.Handle(context.Background(), Message{Channel: "cuepoint", Text: "!react"})
+	if err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if reply != "no active react segment" {
+		t.Fatalf("reply = %q", reply)
 	}
 }
 

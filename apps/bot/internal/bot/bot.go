@@ -34,6 +34,18 @@ type HealthcheckClient interface {
 	Healthcheck(ctx context.Context) (HealthcheckResult, error)
 }
 
+type RuntimeClient interface {
+	SyncSession(ctx context.Context, channel string) (stream.RuntimeState, error)
+	GetRuntime(ctx context.Context, channel string) (stream.RuntimeState, error)
+	ApplyCurrentTitle(ctx context.Context, channel string) (stream.RuntimeState, error)
+	RestoreTitle(ctx context.Context, channel string) (stream.RuntimeState, error)
+	ToggleTitles(ctx context.Context, channel string) (stream.RuntimeState, error)
+	SetTitleFormat(ctx context.Context, channel, format string, reset bool) (stream.RuntimeState, error)
+	GetTitleFormat(ctx context.Context, channel string) (RuntimeTitleFormatResult, error)
+	AdvanceSegment(ctx context.Context, channel string) (stream.RuntimeState, error)
+	AddTimelineMarker(ctx context.Context, channel, label string, end bool) (stream.RuntimeState, error)
+}
+
 type CreateMarkerResult struct {
 	MarkerID string
 	JobID    string
@@ -65,13 +77,22 @@ func NewHandler(commands ...Command) *Handler {
 	return &Handler{commands: commands}
 }
 
-func NewDefaultHandler(markerClient MarkerClient, healthClient HealthcheckClient) *Handler {
+func NewDefaultHandler(markerClient MarkerClient, healthClient HealthcheckClient, runtimeClient RuntimeClient) *Handler {
 	runtime := NewRuntimeStatus()
 	commands := []Command{
 		NewHealthAllCommand(healthClient, runtime),
 		NewHealthBotCommand(runtime),
 		NewHealthServerCommand(healthClient),
-		NewMarkerCommand(markerClient),
+		NewMarkerCommand(markerClient, runtimeClient),
+		NewSetTitleCommand(runtimeClient),
+		NewRestoreTitleCommand(runtimeClient),
+		NewToggleTitlesCommand(runtimeClient),
+		NewTitleFormatCommand(runtimeClient),
+		NewViewTitleFormatCommand(runtimeClient),
+		NewResetTitleFormatCommand(runtimeClient),
+		NewWatchingCommand(runtimeClient),
+		NewReactCommand(runtimeClient),
+		NewNextSegmentCommand(runtimeClient),
 	}
 	return NewHandler(append([]Command{NewHelpCommand(commands)}, commands...)...)
 }
@@ -169,11 +190,12 @@ func ParseCommand(text string) (ParsedInput, bool) {
 }
 
 type MarkerCommand struct {
-	client MarkerClient
+	client  MarkerClient
+	runtime RuntimeClient
 }
 
-func NewMarkerCommand(client MarkerClient) *MarkerCommand {
-	return &MarkerCommand{client: client}
+func NewMarkerCommand(client MarkerClient, runtime RuntimeClient) *MarkerCommand {
+	return &MarkerCommand{client: client, runtime: runtime}
 }
 
 func (c *MarkerCommand) Name() string {
@@ -181,14 +203,25 @@ func (c *MarkerCommand) Name() string {
 }
 
 func (c *MarkerCommand) Help() string {
-	return "!marker <stream> <label> <timestamp> - create a marker and queue a job"
+	return "!marker <stream> <label> <timestamp> - create ffmpeg marker job | !marker <label> [end] - create timeline marker"
 }
 
 func (c *MarkerCommand) Match(input ParsedInput) bool {
 	return input.Name == c.Name()
 }
 
-func (c *MarkerCommand) Run(ctx context.Context, _ Message, input ParsedInput) (string, error) {
+func (c *MarkerCommand) Run(ctx context.Context, msg Message, input ParsedInput) (string, error) {
+	if len(input.Args) >= 1 && len(input.Args) != 3 {
+		if c.runtime == nil {
+			return "", errors.New("runtime client unavailable")
+		}
+		label, end := parseTimelineMarkerArgs(input.Args)
+		state, err := c.runtime.AddTimelineMarker(ctx, messageChannel(msg), label, end)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("timeline=%s live=%t segment=%s", label, state.IsLive, activeSegmentTitle(state.ActiveSegment)), nil
+	}
 	command, err := parseMarkerArgs(input.Args)
 	if err != nil {
 		return "", err
@@ -317,15 +350,25 @@ func (c *HelpCommand) Match(input ParsedInput) bool {
 }
 
 func (c *HelpCommand) Run(_ context.Context, _ Message, input ParsedInput) (string, error) {
-	if len(input.Args) != 0 {
-		return "", errors.New("usage: !help")
+	if len(input.Args) > 1 {
+		return "", errors.New("usage: !help [titles|runtime|health|markers]")
+	}
+	if len(input.Args) == 1 {
+		switch input.Args[0] {
+		case "titles":
+			return "titles: !settitle !restoretitle !toggletitles !titleformat !viewtitleformat !resettitleformat", nil
+		case "runtime":
+			return "runtime: !react !watching !nextsegment", nil
+		case "health":
+			return "health: !health !health:bot !health:server", nil
+		case "markers":
+			return "markers: !marker <stream> <label> <timestamp> | !marker <label> [end]", nil
+		default:
+			return "", errors.New("usage: !help [titles|runtime|health|markers]")
+		}
 	}
 
-	lines := []string{c.Help()}
-	for _, command := range c.commands {
-		lines = append(lines, command.Help())
-	}
-	return strings.Join(lines, " | "), nil
+	return "!help titles|runtime|health|markers | basics: !health !marker !react !watching !nextsegment", nil
 }
 
 func parseMarkerArgs(args []string) (stream.CreateMarkerInput, error) {

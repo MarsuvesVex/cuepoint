@@ -28,7 +28,7 @@ func (fakeStore) GetJob(_ context.Context, jobID string) (stream.Job, error) {
 }
 
 func TestCreateMarker(t *testing.T) {
-	server := NewServer(fakeService{}, fakeStore{})
+	server := NewServer(fakeService{}, fakeStore{}, nil, "", "")
 	body, _ := json.Marshal(map[string]string{
 		"stream_id": "stream",
 		"label":     "clip",
@@ -45,7 +45,7 @@ func TestCreateMarker(t *testing.T) {
 }
 
 func TestHealth(t *testing.T) {
-	server := NewServer(fakeService{}, fakeStore{})
+	server := NewServer(fakeService{}, fakeStore{}, nil, "", "")
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)

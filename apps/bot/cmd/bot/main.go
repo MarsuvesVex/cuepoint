@@ -22,12 +22,13 @@ func main() {
 	}
 
 	botLogger := bot.NewLogger(cfg.Bot.LogLevel, log.Default())
-	client := bot.NewHTTPMarkerClient(cfg.Bot.APIBaseURL, nil)
-	handler := bot.NewDefaultHandler(client, client)
+	client := bot.NewHTTPMarkerClient(cfg.Bot.APIBaseURL, cfg.Internal.HeaderName, cfg.Internal.ServiceToken, nil)
+	handler := bot.NewDefaultHandler(client, client, client)
 	adapter, responder, mode, err := buildTransport(ctx, cfg, botLogger)
 	if err != nil {
 		log.Fatalf("build bot transport: %v", err)
 	}
+	bot.RunRuntimeSyncLoop(ctx, client, cfg.Bot.Twitch.Channel, cfg.Bot.RuntimePollInterval, botLogger)
 
 	botLogger.Infof("bot ready with transport=%s api_base_url=%s log_level=%s", mode, cfg.Bot.APIBaseURL, cfg.Bot.LogLevel)
 	if err := bot.RunWithLogger(ctx, adapter, responder, handler, botLogger); err != nil {

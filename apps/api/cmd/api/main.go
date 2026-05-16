@@ -40,9 +40,13 @@ func main() {
 	queue := events.NewQueue(redisClient, cfg.QueueName)
 
 	service := stream.NewService(store, queue)
+	runtimeService := api.NewRuntimeService(
+		store,
+		api.NewTwitchBridgeClient(cfg.Web.BaseURL, cfg.Internal.HeaderName, cfg.Internal.ServiceToken, nil),
+	)
 	server := &http.Server{
 		Addr:    cfg.API.Addr,
-		Handler: api.NewServer(service, store).Handler(),
+		Handler: api.NewServer(service, store, runtimeService, cfg.Internal.HeaderName, cfg.Internal.ServiceToken).Handler(),
 	}
 
 	go func() {
